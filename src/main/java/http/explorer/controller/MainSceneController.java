@@ -29,8 +29,47 @@ public class MainSceneController {
     }
 
     private void loadWebPage(String url) {
+        System.out.println("url : " + url);
+        String host = "";
+        String protocol = "";
+        String port = "";
 
-        String host = separateHost(url);
+        String path = "";
+        if (url.contains("://")) {
+            host = url.substring(url.indexOf("://") + 3);
+            protocol = url.substring(0, url.indexOf("://"));
+        } else {
+            protocol = "http";
+            host = url;
+        }
+        if (host.contains(":")) {
+            port = host.substring(host.indexOf(":") + 1);
+            host = host.substring(0, host.indexOf(":"));
+        } else if (protocol.equals("http")) {
+            port = "80";
+        } else if (protocol.equals("https")) {
+            port = "443";
+        }
+
+        if (port.contains("/")) {
+            path = port.substring(port.indexOf("/"));
+            port = port.substring(0, port.indexOf("/"));
+        } else {
+            path = "/";
+        }
+
+        if (host.contains("/")) {
+            path = host.substring(host.indexOf("/"));
+        }
+
+        if (port.isBlank() || host.isBlank()) {
+            throw new RuntimeException("Invalid web page address");
+        }
+
+        System.out.println("Host : " + host);
+        System.out.println("Protocol : " + protocol);
+        System.out.println("Port : " + port);
+        System.out.println("Path : " + path);
     }
 
     private String separateHost(String url) {
