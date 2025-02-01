@@ -5,6 +5,11 @@ import javafx.scene.control.TextField;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.web.WebView;
 
+import java.io.BufferedOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.Socket;
+
 public class MainSceneController {
     public AnchorPane root;
     public TextField txtAddress;
@@ -64,6 +69,28 @@ public class MainSceneController {
 
         if (port.isBlank() || host.isBlank()) {
             throw new RuntimeException("Invalid web page address");
+        }
+
+        int intPort = Integer.parseInt(port);
+            try (Socket socket = new Socket(host, intPort);
+                 OutputStream os = socket.getOutputStream();
+                 BufferedOutputStream bos = new BufferedOutputStream(os)) {
+                System.out.println("Connected to " + socket.getRemoteSocketAddress());
+
+                String request = """
+                GET %S HTTP/1.1
+                Host: %s
+                User-Agent: http-explorer/1
+                Connection: close
+                Accept: text/html
+                
+                """.formatted(path, host);
+
+                bos.write(request.getBytes());
+                bos.flush();
+
+            } catch (IOException e) {
+                throw new RuntimeException(e);
         }
 
         System.out.println("Host : " + host);
