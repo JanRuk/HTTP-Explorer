@@ -1,39 +1,38 @@
 package http.explorer.controller;
 
+import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.web.WebView;
 
-import java.io.BufferedOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.*;
+import java.lang.foreign.PaddingLayout;
 import java.net.Socket;
 
 public class MainSceneController {
     public AnchorPane root;
-    public TextField txtAddress;
     public WebView wbDisplay;
+    public TextField txtAddress;
 
-    public void initialize() {
-        txtAddress.setText("www.google.com");
+    public void initialize() throws IOException {
+        txtAddress.setText("http://www.google.com");
         loadWebPage(txtAddress.getText());
         txtAddress.focusedProperty().addListener((observable, oldValue, newValue) -> {
             if (newValue) {
-                txtAddress.selectAll();
+                Platform.runLater(() -> txtAddress.selectAll());
             }
         });
-//        wbDisplay.getEngine().load("https://www.google.com");
     }
 
-    public void txtAddressOnAction(ActionEvent event) {
+    public void txtAddressOnAction(ActionEvent event) throws IOException {
         String url = txtAddress.getText();
-
         if (url.isBlank()) return;
+
         loadWebPage(url);
     }
 
-    private void loadWebPage(String url) {
+    private void loadWebPage(String url) throws IOException {
         System.out.println("url : " + url);
         String host = "";
         String protocol = "";
@@ -71,36 +70,76 @@ public class MainSceneController {
             throw new RuntimeException("Invalid web page address");
         }
 
-        int intPort = Integer.parseInt(port);
-            try (Socket socket = new Socket(host, intPort);
-                 OutputStream os = socket.getOutputStream();
-                 BufferedOutputStream bos = new BufferedOutputStream(os)) {
-                System.out.println("Connected to " + socket.getRemoteSocketAddress());
+        int portInt = Integer.parseInt(port);
+        Socket socket = new Socket(host, portInt);
+        System.out.println("Connected to " +socket.getRemoteSocketAddress());
 
-                String request = """
+        OutputStream os = socket.getOutputStream();
+        BufferedOutputStream bos = new BufferedOutputStream(os);
+
+        String request = """
                 GET %S HTTP/1.1
                 Host: %s
-                User-Agent: http-explorer/1
+                User-Agent: dep-browser/1
                 Connection: close
                 Accept: text/html
                 
                 """.formatted(path, host);
 
-                bos.write(request.getBytes());
-                bos.flush();
+        bos.write(request.getBytes());
+        bos.flush();
 
+        new Thread(() -> {
+            try {
+                InputStream is = socket.getInputStream();
+                InputStreamReader isr = new InputStreamReader(is);
+                BufferedReader bsr = new BufferedReader(isr);
+
+                // Read the status line
+                String statusLine = bsr.readLine();
+                int statusCode = Integer.parseInt(statusLine.split(" ")[1]);
+                System.out.println("statusCode : " + statusCode);
+                boolean redirection = statusCode >= 300 && statusCode < 400;
+
+                String contentType = null;
+                // Read request headers
+                String line;
+                while ((line = bsr.readLine()) != null && !line.isBlank()) {
+                    String header = line.split(":")[0].strip();
+                    String value = line.substring(line.indexOf(":") + 1);
+
+                    if (redirection) {
+                        if (!header.equalsIgnoreCase("Location")) continue;
+                        System.out.println("Redirection" + value);
+                        Platform.runLater(() -> txtAddress.setText(value));
+                        loadWebPage(value);
+                        return;
+                    } else {
+                        if (!header.equalsIgnoreCase("content-type")) continue;
+                        contentType = value;
+                    }
+                }
+                System.out.println("Content Type : " + contentType);
+                String content = "";
+                while ((line = bsr.readLine()) != null) {
+                    content += (line + "\n");
+                }
+                System.out.println("Content" + "\n"+ content);
+                String finalContent = content;
+                Platform.runLater(() -> {
+                    wbDisplay.getEngine().loadContent(finalContent);
+                });
             } catch (IOException e) {
                 throw new RuntimeException(e);
-        }
+            }
+        }).start();
+//        wbDisplay.getEngine().load(url);
 
-        System.out.println("Host : " + host);
-        System.out.println("Protocol : " + protocol);
-        System.out.println("Port : " + port);
-        System.out.println("Path : " + path);
-    }
-
-    private String separateHost(String url) {
-        String host = url;
-        return host;
+//            System.out.println("host : " + host);
+//            System.out.println("protocol : " + protocol);
+//            System.out.println("port : " + port);
+//            System.out.println("path : " + path);
     }
 }
+
+
