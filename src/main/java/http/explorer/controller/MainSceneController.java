@@ -1,5 +1,6 @@
 package http.explorer.controller;
 
+import http.explorer.util.ParsedURL;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.scene.control.TextField;
@@ -34,44 +35,46 @@ public class MainSceneController {
 
     private void loadWebPage(String url) throws IOException {
         System.out.println("url : " + url);
-        String host = "";
-        String protocol = "";
-        String port = "";
+        ParsedURL parsedURL = ParsedURL.parse(url);
+        String host = parsedURL.host();
+        String protocol = parsedURL.protocol();
+        int port = parsedURL.port();
+        String path = parsedURL.path();
 
-        String path = "";
-        if (url.contains("://")) {
-            host = url.substring(url.indexOf("://") + 3);
-            protocol = url.substring(0, url.indexOf("://"));
-        } else {
-            protocol = "http";
-            host = url;
-        }
-        if (host.contains(":")) {
-            port = host.substring(host.indexOf(":") + 1);
-            host = host.substring(0, host.indexOf(":"));
-        } else if (protocol.equals("http")) {
-            port = "80";
-        } else if (protocol.equals("https")) {
-            port = "443";
-        }
-
-        if (port.contains("/")) {
-            path = port.substring(port.indexOf("/"));
-            port = port.substring(0, port.indexOf("/"));
-        } else {
-            path = "/";
-        }
-
-        if (host.contains("/")) {
-            path = host.substring(host.indexOf("/"));
-        }
-
-        if (port.isBlank() || host.isBlank()) {
-            throw new RuntimeException("Invalid web page address");
-        }
-
-        int portInt = Integer.parseInt(port);
-        Socket socket = new Socket(host, portInt);
+//        String path = "";
+//        if (url.contains("://")) {
+//            host = url.substring(url.indexOf("://") + 3);
+//            protocol = url.substring(0, url.indexOf("://"));
+//        } else {
+//            protocol = "http";
+//            host = url;
+//        }
+//        if (host.contains(":")) {
+//            port = host.substring(host.indexOf(":") + 1);
+//            host = host.substring(0, host.indexOf(":"));
+//        } else if (protocol.equals("http")) {
+//            port = "80";
+//        } else if (protocol.equals("https")) {
+//            port = "443";
+//        }
+//
+//        if (port.contains("/")) {
+//            path = port.substring(port.indexOf("/"));
+//            port = port.substring(0, port.indexOf("/"));
+//        } else {
+//            path = "/";
+//        }
+//
+//        if (host.contains("/")) {
+//            path = host.substring(host.indexOf("/"));
+//        }
+//
+//        if (port.isBlank() || host.isBlank()) {
+//            throw new RuntimeException("Invalid web page address");
+//        }
+//
+//        int portInt = Integer.parseInt(port);
+        Socket socket = new Socket(host, port);
         System.out.println("Connected to " +socket.getRemoteSocketAddress());
 
         OutputStream os = socket.getOutputStream();
@@ -83,7 +86,7 @@ public class MainSceneController {
                 User-Agent: dep-browser/1
                 Connection: close
                 Accept: text/html
-                
+
                 """.formatted(path, host);
 
         bos.write(request.getBytes());
@@ -133,12 +136,12 @@ public class MainSceneController {
                 throw new RuntimeException(e);
             }
         }).start();
-//        wbDisplay.getEngine().load(url);
+        wbDisplay.getEngine().load(url);
 
-//            System.out.println("host : " + host);
-//            System.out.println("protocol : " + protocol);
-//            System.out.println("port : " + port);
-//            System.out.println("path : " + path);
+            System.out.println("host : " + host);
+            System.out.println("protocol : " + protocol);
+            System.out.println("port : " + port);
+            System.out.println("path : " + path);
     }
 }
 
