@@ -6,10 +6,15 @@ import javafx.event.ActionEvent;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.web.WebView;
+import javafx.stage.Stage;
 
-import java.io.*;
-import java.lang.foreign.PaddingLayout;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.Socket;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainSceneController {
     public AnchorPane root;
@@ -41,56 +46,9 @@ public class MainSceneController {
         int port = parsedURL.port();
         String path = parsedURL.path();
 
-//        String path = "";
-//        if (url.contains("://")) {
-//            host = url.substring(url.indexOf("://") + 3);
-//            protocol = url.substring(0, url.indexOf("://"));
-//        } else {
-//            protocol = "http";
-//            host = url;
-//        }
-//        if (host.contains(":")) {
-//            port = host.substring(host.indexOf(":") + 1);
-//            host = host.substring(0, host.indexOf(":"));
-//        } else if (protocol.equals("http")) {
-//            port = "80";
-//        } else if (protocol.equals("https")) {
-//            port = "443";
-//        }
-//
-//        if (port.contains("/")) {
-//            path = port.substring(port.indexOf("/"));
-//            port = port.substring(0, port.indexOf("/"));
-//        } else {
-//            path = "/";
-//        }
-//
-//        if (host.contains("/")) {
-//            path = host.substring(host.indexOf("/"));
-//        }
-//
-//        if (port.isBlank() || host.isBlank()) {
-//            throw new RuntimeException("Invalid web page address");
-//        }
-//
-//        int portInt = Integer.parseInt(port);
+
         Socket socket = new Socket(host, port);
-        System.out.println("Connected to " +socket.getRemoteSocketAddress());
-
-        OutputStream os = socket.getOutputStream();
-        BufferedOutputStream bos = new BufferedOutputStream(os);
-
-        String request = """
-                GET %S HTTP/1.1
-                Host: %s
-                User-Agent: dep-browser/1
-                Connection: close
-                Accept: text/html
-
-                """.formatted(path, host);
-
-        bos.write(request.getBytes());
-        bos.flush();
+        String baseUrl = protocol + "://" + host + ":" + port + "/";
 
         new Thread(() -> {
             try {
@@ -98,51 +56,91 @@ public class MainSceneController {
                 InputStreamReader isr = new InputStreamReader(is);
                 BufferedReader bsr = new BufferedReader(isr);
 
-                // Read the status line
                 String statusLine = bsr.readLine();
                 int statusCode = Integer.parseInt(statusLine.split(" ")[1]);
-                System.out.println("statusCode : " + statusCode);
                 boolean redirection = statusCode >= 300 && statusCode < 400;
 
-                String contentType = null;
-                // Read request headers
                 String line;
+                String contentType = null;
+                boolean chunked = false;
+
                 while ((line = bsr.readLine()) != null && !line.isBlank()) {
                     String header = line.split(":")[0].strip();
-                    String value = line.substring(line.indexOf(":") + 1);
-
+                    String value = line.substring(line.indexOf(":") + 1).strip();
                     if (redirection) {
                         if (!header.equalsIgnoreCase("Location")) continue;
-                        System.out.println("Redirection" + value);
+                        System.out.println("Redirection: " + value);
                         Platform.runLater(() -> txtAddress.setText(value));
                         loadWebPage(value);
                         return;
                     } else {
-                        if (!header.equalsIgnoreCase("content-type")) continue;
-                        contentType = value;
+                        if (header.equalsIgnoreCase("Content-Type")) {
+                            contentType = value;
+                        } else if (header.equalsIgnoreCase("Transfer-Encoding")) {
+                            chunked = value.equalsIgnoreCase("chunked");
+                        }
                     }
                 }
-                System.out.println("Content Type : " + contentType);
-                String content = "";
-                while ((line = bsr.readLine()) != null) {
-                    content += (line + "\n");
+
+                if (contentType == null || !contentType.contains("text/html")) {
+                    displayError("Sorry, content type not supported");
+                } else {
+                    if (chunked) bsr.readLine();    // Skip the chunk size
+                    StringBuilder sb = new StringBuilder();
+                    while ((line = bsr.readLine()) != null) {
+                        sb.append(line);
+                    }
+                    if (chunked) sb.deleteCharAt(sb.length() - 1); // Delete the chunk boundary
+
+                    if (!Pattern.compile("<head>.*<base .*</head>").matcher(sb).find()) {
+                        Matcher headMatcher = Pattern.compile("<head>").matcher(sb);
+                        if (headMatcher.find()) {
+                            sb.insert(headMatcher.end(), "<base href='%s'>".formatted(baseUrl));
+                        }
+                    }
+
+                    Matcher titleMatcher = Pattern.compile("<title>(.+)</title>", Pattern.CASE_INSENSITIVE).matcher(sb);
+                    if (titleMatcher.find()) {
+                        Platform.runLater(() -> {
+                            ((Stage) (root.getScene().getWindow())).setTitle("DEP Browser - " + titleMatcher.group(1));
+                        });
+                    }
+
+
+                    Platform.runLater(() -> wbDisplay.getEngine().loadContent(sb.toString()));
                 }
-                System.out.println("Content" + "\n"+ content);
-                String finalContent = content;
-                Platform.runLater(() -> {
-                    wbDisplay.getEngine().loadContent(finalContent);
-                });
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                e.printStackTrace();
+                displayError("Connection Failed");
             }
         }).start();
-        wbDisplay.getEngine().load(url);
 
-            System.out.println("host : " + host);
-            System.out.println("protocol : " + protocol);
-            System.out.println("port : " + port);
-            System.out.println("path : " + path);
+        String httpRequest = """
+                GET %s HTTP/1.1
+                Host: %s
+                User-Agent: Mozilla/5.0
+                Connection: close
+                Accept: text/html
+                
+                """.formatted(path, host);
+        socket.getOutputStream().write(httpRequest.getBytes());
+        socket.getOutputStream().flush();
+
     }
+
+    private void displayError(String message) {
+        Platform.runLater(() -> {
+            wbDisplay.getEngine().loadContent("""
+                    <!DOCTYPE html>
+                    <html>
+                    <body>
+                    <h1 style="text-align: center;">%s</h1>
+                    </body>
+                    </html>
+                    """.formatted(message));
+        });
+    }
+
 }
 
 
